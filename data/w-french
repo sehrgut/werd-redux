@@ -1,0 +1,41 @@
+# pseudo-French
+#
+# Format:
+# All datafiles must have a 'W' rule.
+# All rules are named with one capital, and all capitals should have rules.
+# Trailing whitespace is OK, but it's meaningful everywhere else.
+#
+# Basic word shapes
+W:CDF CVnAX CVnAU CVnAT CVMT CDMU CVMU IVMT ECT CVZX
+# Prefixes
+I:in ad con des mal pour sous
+# V Prefixes
+E:entre re
+# Ends of words
+T:VF
+# Medial consonants
+M:l ll t ss n m
+# Affixes
+U:eur ien ant esse ent able oir eau aire erie e er ir ain age ule on ade
+# Consonants
+C:b c ch d f g j l m n p qu r s t v sP Rr Ll
+# Finals
+F:c f gne m n nt p r sse t s l
+# Other finals
+Z:c f gn m n nt p r t s l
+# Finals after nasals
+A:c p s t
+# Voiceless stops
+P:p t
+# Voiced stops
+Q:b d g
+# Can be next to L
+L:b f p c
+# Can be next to R
+R:P Q f
+# Simple vowels
+V:a e i o u
+# Diphthongs
+D:au ai oi ou ie eau oeu
+# Final vowels or diphthongs
+X:ee e ou ie eau oi
