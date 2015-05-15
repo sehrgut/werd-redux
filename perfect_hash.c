@@ -7,13 +7,12 @@
 
 #define FNV1_PRIME_32 0x01000193
 
-static uint32_t fnv1a32(uint32_t d, char* str) {
-  // http://stevehanov.ca/blog/index.php?id=119
+static uint32_t fnv1a32(uint32_t d, const uint8_t* buf, long len) {
   //http://svn.apache.org/repos/asf/subversion/trunk/subversion/libsvn_subr/fnv1a.c
 
-  int i, n;
-  for (i=0, n=strlen(str); i<n; i++) {
-    d ^= str[i];
+  int i;
+  for (i=0; i<len; i++) {
+    d ^= buf[i];
     d *= FNV1_PRIME_32;
   }
 
@@ -21,13 +20,14 @@ static uint32_t fnv1a32(uint32_t d, char* str) {
 }
 
 static uint32_t hash_index(uint32_t d, char* key, int size) {
+  // http://stevehanov.ca/blog/index.php?id=119
   if (!d) d = FNV1_PRIME_32;
-  return fnv1a32(d, key) % size;
+  return fnv1a32(d, (uint8_t*)key, strlen(key)) % size;
 }
 
 struct perfect_hash_s {
-  char**    keys;
   int       len;
+  uint32_t  seed;
   uint32_t* G;
   void**    V;
 };
@@ -132,17 +132,28 @@ struct perfect_hash_s create_hash(char* keys[], int size) {
   free(dvals);
   free(used);
 
-  return (struct perfect_hash_s){NULL, 0, NULL, NULL};
+  return (struct perfect_hash_s){0, 0, NULL, NULL};
 }
 
 typedef const char * (*key_fp)(const void *);
 
-void * phash_create(const void * contents, key_fp get_key) {
+void * phash_create(const void* contents[], int len, key_fp get_key) {
+  int i;
+  for (i=0; i<len; i++) {
+    printf("Key of object %p = '%s'\n", contents[i], get_key(contents[i]));
+  }
+}
 
+const char* get_str_as_own_key(const void* obj) {
+  return obj;
 }
 
 void main() {
   char* alphabet[] = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
 
-  create_hash(alphabet, 26);
+  //create_hash(alphabet, 26);
+
+  phash_create((const void**)alphabet, 26, get_str_as_own_key);
+
+  exit(EXIT_SUCCESS);
 }

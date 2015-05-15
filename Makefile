@@ -12,6 +12,12 @@ LINTS=$(SRCS:%.c=%.ln)
 
 all: werd
 
+hash: perfect_hash.c
+	$(CC) $(CFLAGS) perfect_hash.c -o hash
+
+test-hash: hash
+	./hash
+
 werd: depend werd_parser.tab.c werd_parser.yy.c werd_parser.tab.h werd_parser.yy.h $(OBJS)
 	$(CC) $(CFLAGS) werd_parser.yy.c werd_parser.tab.c $(SRCS) -o $@
 
