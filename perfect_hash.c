@@ -4,22 +4,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "perfect_hash.h"
+#include "fnv1a32.h"
 
-#define FNV1_PRIME_32 0x01000193
-
-static uint32_t fnv1a32(uint32_t d, const uint8_t* buf, long len) {
-  //http://svn.apache.org/repos/asf/subversion/trunk/subversion/libsvn_subr/fnv1a.c
-
-  int i;
-  for (i=0; i<len; i++) {
-    d ^= buf[i];
-    d *= FNV1_PRIME_32;
-  }
-
-  return d;
-}
-
-static uint32_t hash_index(uint32_t d, char* key, int size) {
+static uint32_t hash_index(uint32_t d, const char* key, int size) {
   // http://stevehanov.ca/blog/index.php?id=119
   if (!d) d = FNV1_PRIME_32;
   return fnv1a32(d, (uint8_t*)key, strlen(key)) % size;
@@ -29,7 +17,7 @@ struct perfect_hash_s {
   int       len;
   uint32_t  seed;
   uint32_t* G;
-  void**    V;
+  const void**    V;
 };
 
 typedef struct bucket_s {
@@ -37,18 +25,45 @@ typedef struct bucket_s {
   int   id;
 } Bucket;
 
-static bool test_dval(char* keys[], int n, uint32_t d, bool used[], int size) {
-  bool* seen = calloc(size, sizeof(bool));
+typedef struct item_s {
+  const void* object;
+  const char* key;
+} Item;
+
+static bool test_dval(const Item* items[], int n, uint32_t d, int size, const void* V[]) {
+  static bool* seen = NULL;
+  static int seen_size = 0;
+
+  if (!seen || seen_size < size) {
+    free(seen);
+    seen = calloc(size, sizeof(bool));
+    seen_size = size;
+  } else {
+    memset(seen, 0x00, sizeof(bool) * size);
+  }
+
+  static uint32_t* hashes = NULL;
+  static int hashes_size = 0;
+
+  if (!hashes || hashes_size < n) {
+    free(hashes);
+    hashes = calloc(n, sizeof(uint32_t));
+    hashes_size = n;
+  } else {
+    memset(hashes, 0x00, sizeof(uint32_t) * n);
+  }
 
   bool ok = true;
   int i;
   for (i=0; i<n && ok; i++) {
-    uint32_t hash = hash_index(d, keys[i], size);
-    ok = !(used[hash] || seen[hash]);
+    uint32_t hash = hashes[i] = hash_index(d, items[i]->key, size);
+    ok = !(V[hash] || seen[hash]);
     seen[hash] = true;
   }
 
-  free(seen);
+  if (ok)
+    for (i=0; i<n; i++)
+      V[hashes[i]] = items[i]->object;
 
   return ok;
 }
@@ -61,11 +76,21 @@ static int cmp_bucket_size_desc(const void* a, const void* b) {
   return -(cmp_bucket_size(a, b));
 }
 
-struct perfect_hash_s create_hash(char* keys[], int size) {
-  uint32_t* hashes = calloc(size, sizeof(uint32_t));
+void phash_destroy(struct perfect_hash_s* hash) {
+  if (hash) {
+    if (hash->G) free(hash->G);
+    if (hash->V) free(hash->V);
+    free(hash);
+  }
+}
+
+// todo: "digest algo" enum and parameter
+struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get_key, key_destroy_fp destroy_key) {
+  uint32_t* hashes = calloc(size, sizeof(uint32_t)); // todo: move hashes into item_s
   uint32_t* dvals = calloc(size, sizeof(uint32_t));
   Bucket* buckets = calloc(size, sizeof(Bucket));
-  bool* used = calloc(size, sizeof(bool));
+  const char** keys = calloc(size, sizeof(char*)); // todo: move keys into item_s
+  Item* items = calloc(size, sizeof(Item));
 
   int i;
 
@@ -76,6 +101,8 @@ struct perfect_hash_s create_hash(char* keys[], int size) {
 
   // hash keys and count bucket sizes
   for (i=0; i<size; i++) {
+    keys[i] = get_key(objects[i]);
+    items[i] = (Item){objects[i], keys[i]};
     uint32_t hash = hash_index(0, keys[i], size);
     hashes[i] = hash;
     buckets[hash].size++;
@@ -85,6 +112,7 @@ struct perfect_hash_s create_hash(char* keys[], int size) {
   qsort(buckets, size, sizeof(Bucket), cmp_bucket_size_desc);
 
   int bucketpos;
+  const void** V = calloc(size, sizeof(void*));
   for (bucketpos=0; bucketpos<size; bucketpos++) {
       Bucket b = buckets[bucketpos];
 
@@ -93,28 +121,22 @@ struct perfect_hash_s create_hash(char* keys[], int size) {
 
       if (!kn) break;
 
-      char** kk = calloc(kn, sizeof(char*));
+      const Item** kk = calloc(kn, sizeof(Item*));
 
       int keypos, kkpos;
       for (keypos=0, kkpos=0; keypos<size && kkpos<kn; keypos++) {
         if (hashes[keypos] == b.id) {
-          kk[kkpos++] = keys[keypos];
+          kk[kkpos++] = &items[keypos];
         }
       }
 
       // find workable dval
       int dd = 1;
-      while (test_dval(kk, kn, dd, used, size) == false) {
+      while (test_dval(kk, kn, dd, size, V) == false) {
         dd++;
       }
 
       dvals[bucketpos] = dd;
-
-      // note used positions with found dval
-      for (kkpos=0; kkpos<kn; kkpos++) {
-        uint32_t hash = hash_index(dd, kk[kkpos], size);
-        used[hash] = true;
-      }
 
       free(kk);
 
@@ -124,36 +146,55 @@ struct perfect_hash_s create_hash(char* keys[], int size) {
   for (i=0; i<size; i++) {
     //printf("Bucket %d: %d members\n", buckets[i].id, buckets[i].size);
     printf("Dval %d: %d\n", i, dvals[i]);
-    //printf("Used %d: %s\n", i, used[i] ? "true" : "false");
   }
 
   free(hashes);
   free(buckets);
-  free(dvals);
-  free(used);
+  free(items);
 
-  return (struct perfect_hash_s){0, 0, NULL, NULL};
+  if (destroy_key)
+    for(i=0; i<size; i++)
+      destroy_key(keys[i]), keys[i] = NULL;
+
+  free(keys);
+
+  // todo: this should be the canonical store of these values all throughout
+  struct perfect_hash_s* out = calloc(1, sizeof(struct perfect_hash_s));
+
+  if (out){
+    out->len = size;
+    out->seed = 0;
+    out->G = dvals;
+    out->V = V;
+  } else {
+    if (dvals) free(dvals);
+    if (V) free(V);
+  }
+
+  return out;
 }
 
-typedef const char * (*key_fp)(const void *);
 
-void * phash_create(const void* contents[], int len, key_fp get_key) {
-  int i;
-  for (i=0; i<len; i++) {
-    printf("Key of object %p = '%s'\n", contents[i], get_key(contents[i]));
-  }
+/***** Test harness *****/
+
+const char* dup_str_as_own_key(const void* obj) {
+  return strdup((const char *)obj);
 }
 
 const char* get_str_as_own_key(const void* obj) {
-  return obj;
+  return (const char *)obj;
+}
+
+void free_key(const char* key) {
+  free((void *)key);
 }
 
 void main() {
   char* alphabet[] = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
 
-  //create_hash(alphabet, 26);
+  phash_create((const void**)alphabet, 26, dup_str_as_own_key, free_key);
 
-  phash_create((const void**)alphabet, 26, get_str_as_own_key);
+  //phash_create((const void**)alphabet, 26, get_str_as_own_key);
 
   exit(EXIT_SUCCESS);
 }

@@ -12,14 +12,15 @@ LINTS=$(SRCS:%.c=%.ln)
 
 all: werd
 
-hash: perfect_hash.c
-	$(CC) $(CFLAGS) perfect_hash.c -o hash
+hash: perfect_hash.o fnv1a32.o
+	$(CC) $(CFLAGS) $^ -o hash
 
 test-hash: hash
 	./hash
 
+#todo: rule to build lexer and parser .o files independently
 werd: depend werd_parser.tab.c werd_parser.yy.c werd_parser.tab.h werd_parser.yy.h $(OBJS)
-	$(CC) $(CFLAGS) werd_parser.yy.c werd_parser.tab.c $(SRCS) -o $@
+	$(CC) $(CFLAGS) werd_parser.yy.c werd_parser.tab.c $(OBJS) -o $@
 
 clean:
 	rm -f *.tab.c *.tab.h *.yy.c *.exe .depend *.o *.stackdump *.yy.h *.ln
