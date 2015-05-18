@@ -30,6 +30,10 @@ typedef struct item_s {
   const char* key;
 } Item;
 
+void phash_dump_tables(const int* G, const void** V, int size);
+void phash_dump(struct perfect_hash_s* hashfunc);
+
+
 static bool test_dval(const Item* items[], int n, uint32_t d, int size, const void* V[]) {
   static bool* seen = NULL;
   static int seen_size = 0;
@@ -58,14 +62,13 @@ static bool test_dval(const Item* items[], int n, uint32_t d, int size, const vo
   for (i=0; i<n && ok; i++) {
     uint32_t hash = hashes[i] = hash_index(d, items[i]->key, size);
     ok = !(V[hash] || seen[hash]);
-    printf("OK: %s (V: %p, seen: %s)\n", (ok?"true":"false"), V[hash], (seen[hash]?"true":"false"));
     seen[hash] = true;
   }
 
   if (ok)
     for (i=0; i<n; i++)
       V[hashes[i]] = items[i]->object;
-
+  
   return ok;
 }
 
@@ -103,9 +106,7 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   // hash keys and count bucket sizes
   for (i=0; i<size; i++) {
     keys[i] = get_key(objects[i]);
-    printf("Made key %s\n", keys[i]); //BUG: keys aren't getting saved into items properly
     items[i] = (Item){objects[i], keys[i]};
-    printf("Made item %p {%p, %s}\n", items[i].object, items[i].key);
     uint32_t hash = hash_index(0, keys[i], size);
     hashes[i] = hash;
     buckets[hash].size++;
@@ -139,8 +140,10 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
         dd++;
       }
 
-      dvals[bucketpos] = dd;
+      dvals[b.id] = dd;
 
+	  phash_dump_tables(dvals, V, size);
+	  
       free(kk);
 
   }
@@ -199,16 +202,18 @@ const void* phash_get_validated(const char* key,
   return obj;
 }
 
+void phash_dump_tables(const int* G, const void** V, int size) {
+  int i;
+  for(i=0; i<size; i++)
+    printf("\tG[%02d] = %d\tV[%02d] = %p\n",
+      i, G[i], i, V[i]);
+}
+
 void phash_dump(struct perfect_hash_s* hashfunc) {
   printf("struct perfect_hash_s %p\n", hashfunc);
   printf("\tsize: %d\n", hashfunc->len);
   printf("\tseed: %d\n", hashfunc->seed);
-
-  int i;
-  for(i=0; i<hashfunc->len; i++)
-    printf("\tG[%02d] = %d\tV[%02d] = %p\n",
-      i, hashfunc->G[i], i, hashfunc->V[i]);
-
+  phash_dump_tables(hashfunc->G, hashfunc->V, hashfunc->len);
 }
 
 /***** Test harness *****/
