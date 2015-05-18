@@ -14,9 +14,9 @@ static uint32_t hash_index(uint32_t d, const char* key, int size) {
 }
 
 struct perfect_hash_s {
-  int       len;
-  uint32_t  seed;
-  uint32_t* G;
+  int             len;
+  uint32_t        seed;
+  uint32_t*       G;
   const void**    V;
 };
 
@@ -58,6 +58,7 @@ static bool test_dval(const Item* items[], int n, uint32_t d, int size, const vo
   for (i=0; i<n && ok; i++) {
     uint32_t hash = hashes[i] = hash_index(d, items[i]->key, size);
     ok = !(V[hash] || seen[hash]);
+    printf("OK: %s (V: %p, seen: %s)\n", (ok?"true":"false"), V[hash], (seen[hash]?"true":"false"));
     seen[hash] = true;
   }
 
@@ -102,7 +103,9 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   // hash keys and count bucket sizes
   for (i=0; i<size; i++) {
     keys[i] = get_key(objects[i]);
+    printf("Made key %s\n", keys[i]); //BUG: keys aren't getting saved into items properly
     items[i] = (Item){objects[i], keys[i]};
+    printf("Made item %p {%p, %s}\n", items[i].object, items[i].key);
     uint32_t hash = hash_index(0, keys[i], size);
     hashes[i] = hash;
     buckets[hash].size++;
@@ -174,6 +177,39 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   return out;
 }
 
+const void* phash_get(const char* key, const struct perfect_hash_s* hashfunc) {
+  int g = hash_index(hashfunc->seed, key, hashfunc->len);
+  int d = hashfunc->G[g];
+  int v = hash_index(d, key, hashfunc->len);
+  return hashfunc->V[v];
+}
+
+const void* phash_get_validated(const char* key,
+    const struct perfect_hash_s* hashfunc,
+    key_fp get_key, key_destroy_fp destroy_key) {
+  const void* obj = phash_get(key, hashfunc);
+  const char* obj_key = get_key(obj);
+
+  if (strcmp(key, obj_key) != 0)
+    obj = NULL;
+
+  if (destroy_key)
+    destroy_key(obj_key);
+
+  return obj;
+}
+
+void phash_dump(struct perfect_hash_s* hashfunc) {
+  printf("struct perfect_hash_s %p\n", hashfunc);
+  printf("\tsize: %d\n", hashfunc->len);
+  printf("\tseed: %d\n", hashfunc->seed);
+
+  int i;
+  for(i=0; i<hashfunc->len; i++)
+    printf("\tG[%02d] = %d\tV[%02d] = %p\n",
+      i, hashfunc->G[i], i, hashfunc->V[i]);
+
+}
 
 /***** Test harness *****/
 
@@ -192,7 +228,18 @@ void free_key(const char* key) {
 void main() {
   char* alphabet[] = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
 
-  phash_create((const void**)alphabet, 26, dup_str_as_own_key, free_key);
+  struct perfect_hash_s* func = phash_create((const void**)alphabet, 26, dup_str_as_own_key, free_key);
+  phash_dump(func);
+
+  int i;
+  for(i=0; i<26; i++) {
+    char* good_key = alphabet[i];
+    char* good_obj = (char *)phash_get(good_key, func);
+    char* good_obj_validated = (char *)phash_get_validated(good_key, func, dup_str_as_own_key, free_key);
+    printf("match: %s->%s (%s)\n", good_key, good_obj, good_obj_validated);
+  }
+
+
 
   //phash_create((const void**)alphabet, 26, get_str_as_own_key);
 
