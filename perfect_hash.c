@@ -7,13 +7,9 @@
 #include "perfect_hash.h"
 #include "fnv1a32.h"
 
-static uint32_t hash_index(uint32_t d, const char* key, int size) {
-  // http://stevehanov.ca/blog/index.php?id=119
-  if (!d) d = FNV1_PRIME_32;
-  return fnv1a32(d, (uint8_t*)key, strlen(key)) % size;
-}
+/***** Types *****/
 
-struct perfect_hash_s {
+struct phash_state_s {
   int             len;
   uint32_t        seed;
   uint32_t*       G;
@@ -30,9 +26,17 @@ typedef struct item_s {
   const char* key;
 } Item;
 
-void phash_dump_tables(const int* G, const void** V, int size);
-void phash_dump(struct perfect_hash_s* hashfunc);
+/***** Local Function Declarations *****/
+static void phash_dump_tables(const int* G, const void** V, int size);
+static void phash_dump(struct phash_state_s* hashfunc);
 
+/***** Local Functions *****/
+
+static uint32_t hash_index(uint32_t d, const char* key, int size) {
+  // http://stevehanov.ca/blog/index.php?id=119
+  if (!d) d = FNV1_PRIME_32;
+  return fnv1a32(d, (uint8_t*)key, strlen(key)) % size;
+}
 
 static bool test_dval(const Item* items[], int n, uint32_t d, int size, const void* V[]) {
   static bool* seen = NULL;
@@ -80,7 +84,24 @@ static int cmp_bucket_size_desc(const void* a, const void* b) {
   return -(cmp_bucket_size(a, b));
 }
 
-void phash_destroy(struct perfect_hash_s* hash) {
+/***** Debug Functions *****/
+void phash_dump_tables(const int* G, const void** V, int size) {
+  int i;
+  for(i=0; i<size; i++)
+    printf("\tG[%02d] = %d\tV[%02d] = %p\n",
+      i, G[i], i, V[i]);
+}
+
+void phash_dump(struct phash_state_s* hashfunc) {
+  printf("struct phash_state_s %p\n", hashfunc);
+  printf("\tsize: %d\n", hashfunc->len);
+  printf("\tseed: %d\n", hashfunc->seed);
+  phash_dump_tables(hashfunc->G, hashfunc->V, hashfunc->len);
+}
+
+/***** External Functions *****/
+
+void phash_destroy(struct phash_state_s* hash) {
   if (hash) {
     if (hash->G) free(hash->G);
     if (hash->V) free(hash->V);
@@ -89,7 +110,7 @@ void phash_destroy(struct perfect_hash_s* hash) {
 }
 
 // todo: "digest algo" enum and parameter
-struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get_key, key_destroy_fp destroy_key) {
+struct phash_state_s * phash_create(const void* objects[], int size, key_fp get_key, key_destroy_fp destroy_key) {
   uint32_t* hashes = calloc(size, sizeof(uint32_t)); // todo: move hashes into item_s
   uint32_t* dvals = calloc(size, sizeof(uint32_t));
   Bucket* buckets = calloc(size, sizeof(Bucket));
@@ -120,7 +141,6 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   for (bucketpos=0; bucketpos<size; bucketpos++) {
       Bucket b = buckets[bucketpos];
 
-      printf("Processing bucket %d (id=%d, size=%d)\n", bucketpos, b.id, b.size);
       int kn = b.size;
 
       if (!kn) break;
@@ -142,17 +162,10 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
 
       dvals[b.id] = dd;
 
-	  phash_dump_tables(dvals, V, size);
-	  
       free(kk);
 
   }
 
-
-  for (i=0; i<size; i++) {
-    //printf("Bucket %d: %d members\n", buckets[i].id, buckets[i].size);
-    printf("Dval %d: %d\n", i, dvals[i]);
-  }
 
   free(hashes);
   free(buckets);
@@ -165,7 +178,7 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   free(keys);
 
   // todo: this should be the canonical store of these values all throughout
-  struct perfect_hash_s* out = calloc(1, sizeof(struct perfect_hash_s));
+  struct phash_state_s* out = calloc(1, sizeof(struct phash_state_s));
 
   if (out){
     out->len = size;
@@ -180,7 +193,7 @@ struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get
   return out;
 }
 
-const void* phash_get(const char* key, const struct perfect_hash_s* hashfunc) {
+const void* phash_get(const char* key, const struct phash_state_s* hashfunc) {
   int g = hash_index(hashfunc->seed, key, hashfunc->len);
   int d = hashfunc->G[g];
   int v = hash_index(d, key, hashfunc->len);
@@ -188,8 +201,9 @@ const void* phash_get(const char* key, const struct perfect_hash_s* hashfunc) {
 }
 
 const void* phash_get_validated(const char* key,
-    const struct perfect_hash_s* hashfunc,
-    key_fp get_key, key_destroy_fp destroy_key) {
+								const struct phash_state_s* hashfunc,
+								key_fp get_key, key_destroy_fp destroy_key) {
+		
   const void* obj = phash_get(key, hashfunc);
   const char* obj_key = get_key(obj);
 
@@ -202,22 +216,8 @@ const void* phash_get_validated(const char* key,
   return obj;
 }
 
-void phash_dump_tables(const int* G, const void** V, int size) {
-  int i;
-  for(i=0; i<size; i++)
-    printf("\tG[%02d] = %d\tV[%02d] = %p\n",
-      i, G[i], i, V[i]);
-}
-
-void phash_dump(struct perfect_hash_s* hashfunc) {
-  printf("struct perfect_hash_s %p\n", hashfunc);
-  printf("\tsize: %d\n", hashfunc->len);
-  printf("\tseed: %d\n", hashfunc->seed);
-  phash_dump_tables(hashfunc->G, hashfunc->V, hashfunc->len);
-}
-
 /***** Test harness *****/
-
+/*
 const char* dup_str_as_own_key(const void* obj) {
   return strdup((const char *)obj);
 }
@@ -233,7 +233,7 @@ void free_key(const char* key) {
 void main() {
   char* alphabet[] = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
 
-  struct perfect_hash_s* func = phash_create((const void**)alphabet, 26, dup_str_as_own_key, free_key);
+  struct phash_state_s* func = phash_create((const void**)alphabet, 26, dup_str_as_own_key, free_key);
   phash_dump(func);
 
   int i;
@@ -245,8 +245,6 @@ void main() {
   }
 
 
-
-  //phash_create((const void**)alphabet, 26, get_str_as_own_key);
-
   exit(EXIT_SUCCESS);
 }
+*/

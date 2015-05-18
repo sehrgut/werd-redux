@@ -12,11 +12,11 @@ LINTS=$(SRCS:%.c=%.ln)
 
 all: werd
 
-hash: perfect_hash.o fnv1a32.o
-	$(CC) $(CFLAGS) $^ -o hash
+phash_test: phash_test.o perfect_hash.o fnv1a32.o
+	$(CC) $(CFLAGS) $^ -o phash_test
 
-test-hash: hash
-	./hash
+test: phash_test
+	./phash_test
 
 #todo: rule to build lexer and parser .o files independently
 werd: depend werd_parser.tab.c werd_parser.yy.c werd_parser.tab.h werd_parser.yy.h $(OBJS)
@@ -27,7 +27,7 @@ clean:
 
 lint: $(LINTS)
 
-test: all
+run: all
 	./werd < data/w-english
 
 depend: .depend

@@ -1,12 +1,17 @@
 #ifndef WERD_PERFECT_HASH_H
 #define WERD_PERFECT_HASH_H
 
-struct perfect_hash_s;
+typedef struct phash_state_s phash_state;
 
 typedef const char * (*key_fp)(const void *);
 typedef void (*key_destroy_fp)(const char *);
 
-struct perfect_hash_s * phash_create(const void* objects[], int size, key_fp get_key, key_destroy_fp destroy_key);
-void phash_destroy(struct perfect_hash_s* hash);
+phash_state* phash_create(const void* objects[], int size,
+							key_fp get_key, key_destroy_fp destroy_key);
+void phash_destroy(phash_state* hash);
+
+const void* phash_get(const char* key, const phash_state* hashfunc);
+const void* phash_get_validated(const char* key, const phash_state* hashfunc,
+								key_fp get_key, key_destroy_fp destroy_key);
 
 #endif
